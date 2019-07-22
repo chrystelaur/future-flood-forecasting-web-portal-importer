@@ -1,0 +1,10 @@
+{
+  "bindings": [
+    {
+      "name": "importTimeSeriesTimer",
+      "type": "timerTrigger",
+      "direction": "in",
+      "schedule": "%FEWS_IMPORT_DISPLAY_GROUPS_SCHEDULE%"
+    }
+  ]
+}
