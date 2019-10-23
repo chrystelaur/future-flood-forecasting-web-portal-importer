@@ -3,12 +3,14 @@
   "version": "0.0.1",
   "description": "A Node.js Microsoft Azure function that imports flood forecasting data.",
   "scripts": {
+    "build": "build/src/main/resources/scripts/build.sh",
     "lint": "standard",
     "test": "testing/run.sh"
   },
   "author": "Department for Environment, Food and Rural Affairs <https://www.gov.uk/government/organisations/department-for-environment-food-rural-affairs>.",
   "license": "SEE LICENSE IN LICENSE",
   "dependencies": {
+    "@azure/service-bus": "^1.1.0",
     "axios": "^0.19.0",
     "defra-logging-facade": "git+https://github.com/DEFRA/defra-logging-facade.git#02459a",
     "moment": "^2.24.0",
