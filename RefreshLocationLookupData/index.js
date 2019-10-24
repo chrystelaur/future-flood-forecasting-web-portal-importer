@@ -60,11 +60,11 @@ async function populateLocationLookupTemporaryTable (preparedStatement, context)
 
   for (const row of rows) {
     // Ignore rows in the CSV data that do not have entries for all columns.
-    if (row.WorkflowId && row.PlotId && row.LocationId) {
+    if (row.WorkflowId && row.PlotId && row.FFFSLocID) {
       await preparedStatement.execute({
         workflowId: row.WorkflowId,
         plotId: row.PlotId,
-        locationId: row.LocationId
+        locationId: row.FFFSLocID
       })
     }
   }
