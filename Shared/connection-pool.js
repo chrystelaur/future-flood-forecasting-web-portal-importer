@@ -1,12 +1,12 @@
 const sql = require('mssql')
 const { logger } = require('defra-logging-facade')
 
-// async/await style:
-const pool = new sql.ConnectionPool(process.env['SQLDB_CONNECTION_STRING'])
-const pooledConnect = pool.connect()
+module.exports = function () {
+  this.pool = new sql.ConnectionPool(process.env['SQLDB_CONNECTION_STRING'])
 
-pool.on('error', err => {
-  logger.error(err)
-})
-
-module.exports = { pool, pooledConnect, sql }
+  // To catch critical pool failures
+  this.pool.on('error', err => {
+    logger.error(err)
+    throw err
+  })
+}

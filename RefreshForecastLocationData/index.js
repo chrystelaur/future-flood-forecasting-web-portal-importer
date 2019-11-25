@@ -1,15 +1,12 @@
+const { doInTransaction } = require('../Shared/transaction-helper')
 const fetch = require('node-fetch')
 const neatCsv = require('neat-csv')
-const { pooledConnect, sql } = require('../Shared/connection-pool')
-const { doInTransaction } = require('../Shared/transaction-helper')
+const sql = require('mssql')
 
 module.exports = async function (context, message) {
   async function refresh (transactionData) {
     await refreshForecastLocationData(transactionData.preparedStatement, transactionData.transaction, context)
   }
-
-  // Ensure the connection pool is ready
-  await pooledConnect
 
   // Refresh the data in the forecast location table within a transaction with a serializable isolation
   // level so that refresh is prevented if the forecast location table is in use. If the forecast location
@@ -17,14 +14,13 @@ module.exports = async function (context, message) {
   // In most cases function invocation will be retried automatically and should succeed.  In rare
   // cases where successive retries fail, the message that triggers the function invocation will be
   // placed on a dead letter queue.  In this case, manual intervention will be required.
-
-  // The function below returns the refresh function with the transaction data object as an argument
   await doInTransaction(refresh, context, sql.ISOLATION_LEVEL.SERIALIZABLE)
 
   sql.on('error', err => {
     context.log.error(err)
     throw err
   })
+  // context.done() not requried as the async function returns the desired result, there is no output binding to be activated.
 }
 
 async function refreshForecastLocationData (preparedStatement, transaction, context) {

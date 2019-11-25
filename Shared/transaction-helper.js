@@ -1,13 +1,23 @@
-const { pool, sql } = require('./connection-pool')
+const Connection = require('../Shared/connection-pool')
+const sql = require('mssql')
 
 module.exports = {
   doInTransaction: async function (fn, context, isolationLevel, ...args) {
-    let request = new sql.Request(pool)
-    await request.batch(`set lock_timeout ${process.env['SQLDB_LOCK_TIMEOUT'] || 6500};`)
+    const connection = new Connection()
+    const pool = connection.pool
+    const request = new sql.Request(pool)
+
     let transaction
+    let transactionRolledBack = false
     let preparedStatement
+
     try {
+      // Begin the connection to the DB and ensure the connection pool is ready
+      await pool.connect()
+      await request.batch(`set lock_timeout ${process.env['SQLDB_LOCK_TIMEOUT'] || 6500};`)
+      // The transaction is created immediately for use
       transaction = new sql.Transaction(pool)
+
       if (isolationLevel) {
         await transaction.begin(isolationLevel)
       } else {
@@ -25,17 +35,27 @@ module.exports = {
       if (preparedStatement && preparedStatement.prepared) {
         await preparedStatement.unprepare()
       }
-      await transaction.rollback()
+      if (transaction) {
+        await transaction.rollback()
+        transactionRolledBack = true
+      }
       throw err
     } finally {
       try {
         if (preparedStatement && preparedStatement.prepared) {
           await preparedStatement.unprepare()
         }
-        if (transaction) {
+      } catch (err) { context.log.error(err) }
+      try {
+        if (transaction && !transactionRolledBack) {
           await transaction.commit()
         }
-      } catch (err) {}
+      } catch (err) { context.log.error(err) }
+      try {
+        if (pool) {
+          await pool.close()
+        }
+      } catch (err) { context.log.error(err) }
     }
   }
 }
