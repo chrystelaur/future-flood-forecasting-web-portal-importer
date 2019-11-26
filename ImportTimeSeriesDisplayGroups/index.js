@@ -20,7 +20,9 @@ module.exports = async function (context, message) {
       throw err
     })
   }
-  await doInTransaction(timeseriesRefresh, context, null)
+
+  await doInTransaction(timeseriesRefresh, context, 'The timeseries refresh has failed with the following error:', null)
+
   // context.done() not requried as the async function returns the desired result, there is no output binding to be activated.
 }
 async function extract (message, regex, expectedNumberOfMatches, matchIndexToReturn, errorMessageSubject, context, preparedStatement) {
