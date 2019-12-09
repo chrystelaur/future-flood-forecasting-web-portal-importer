@@ -1,5 +1,5 @@
 module.exports = describe('Tests for import timeseries display groups', () => {
-  const taskRunCompleteMessages = require('../testing/messages/task-run-complete/messages')
+  const taskRunCompleteMessages = require('../testing/messages/task-run-complete/display-group-messages')
   const Context = require('../testing/mocks/defaultContext')
   const Connection = require('../Shared/connection-pool')
   const messageFunction = require('./index')
@@ -14,19 +14,23 @@ module.exports = describe('Tests for import timeseries display groups', () => {
   const pool = jestConnection.pool
   const request = new sql.Request(pool)
 
-  describe('Message processing for task run completion', () => {
+  describe('Message processing for display group task run completion', () => {
     beforeAll(() => {
       return pool.connect()
     })
 
     beforeAll(() => {
-      return request.batch(`truncate table ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.location_lookup`)
+      return request.batch(`truncate table ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.FLUVIAL_DISPLAY_GROUP_WORKFLOW`)
+    })
+
+    beforeAll(() => {
+      return request.batch(`truncate table ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.fluvial_non_display_group_workflow`)
     })
 
     beforeAll(() => {
       return request.batch(`
         insert into
-          ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.location_lookup (workflow_id, plot_id, location_ids)
+          ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.FLUVIAL_DISPLAY_GROUP_WORKFLOW (workflow_id, plot_id, location_ids)
         values
           ('Test_Workflow1', 'Test Plot1', 'Test Location1')
       `)
@@ -35,7 +39,7 @@ module.exports = describe('Tests for import timeseries display groups', () => {
     beforeAll(() => {
       return request.batch(`
         insert into
-          ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.location_lookup (workflow_id, plot_id, location_ids)
+          ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.FLUVIAL_DISPLAY_GROUP_WORKFLOW (workflow_id, plot_id, location_ids)
         values
           ('Test_Workflow2', 'Test Plot2a', 'Test Location2a')
       `)
@@ -44,7 +48,7 @@ module.exports = describe('Tests for import timeseries display groups', () => {
     beforeAll(() => {
       return request.batch(`
         insert into
-          ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.location_lookup (workflow_id, plot_id, location_ids)
+          ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.FLUVIAL_DISPLAY_GROUP_WORKFLOW (workflow_id, plot_id, location_ids)
         values
           ('Test_Workflow2', 'Test Plot2b', 'Test Location2b')
       `)
@@ -54,6 +58,14 @@ module.exports = describe('Tests for import timeseries display groups', () => {
       // As mocks are reset and restored between each test (through configuration in package.json), the Jest mock
       // function implementation for the function context needs creating for each test.
       context = new Context()
+      return request.batch(`truncate table ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.timeseries`)
+    })
+
+    afterAll(() => {
+      return request.batch(`truncate table ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.FLUVIAL_DISPLAY_GROUP_WORKFLOW`)
+    })
+
+    afterAll(() => {
       return request.batch(`truncate table ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.timeseries`)
     })
 
@@ -112,7 +124,7 @@ module.exports = describe('Tests for import timeseries display groups', () => {
     it('should create a staging exception for an unknown workflow', async () => {
       const unknownWorkflow = 'unknownWorkflow'
       const workflowId = taskRunCompleteMessages[unknownWorkflow].input.description.split(' ')[1]
-      await processMessageAndCheckStagingExceptionIsCreated(unknownWorkflow, `Missing location_lookup data for ${workflowId}`)
+      await processMessageAndCheckStagingExceptionIsCreated(unknownWorkflow, `Missing timeseries data for ${workflowId}`)
     })
     it('should create a staging exception for an invalid message', async () => {
       await processMessageAndCheckStagingExceptionIsCreated('forecastWithoutApprovalStatus', 'Unable to extract task run approval status from message')
@@ -130,15 +142,15 @@ module.exports = describe('Tests for import timeseries display groups', () => {
       const mockResponse = new Error('Request failed with status code 404')
       await processMessageAndCheckExceptionIsThrown('singlePlotApprovedForecast', mockResponse)
     })
-    it('should throw an exception when the location lookup table is being refreshed', async () => {
-      // If the location lookup table is being refreshed messages are elgible for replay a certain number of times
+    it('should throw an exception when the fluvial_display_group_workflow table is being refreshed', async () => {
+      // If the fluvial_display_group_workflow table is being refreshed messages are elgible for replay a certain number of times
       // so check that an exception is thrown to facilitate this process.
       const mockResponse = {
         data: {
           key: 'Timeseries display groups data'
         }
       }
-      await lockLocationLookupTableAndCheckMessageCannotBeProcessed('singlePlotApprovedForecast', mockResponse)
+      await lockDisplayGroupTableAndCheckMessageCannotBeProcessed('singlePlotApprovedForecast', mockResponse)
       // Set the test timeout higher than the database request timeout.
     }, parseInt(process.env['SQLTESTDB_REQUEST_TIMEOUT'] || 15000) + 5000)
   })
@@ -222,14 +234,14 @@ module.exports = describe('Tests for import timeseries display groups', () => {
       .rejects.toThrow(mockErrorResponse)
   }
 
-  async function lockLocationLookupTableAndCheckMessageCannotBeProcessed (messageKey, mockResponse) {
+  async function lockDisplayGroupTableAndCheckMessageCannotBeProcessed (messageKey, mockResponse) {
     let transaction
     try {
-      // Lock the location lookup table and then try and process the message.
+      // Lock the fluvial_display_group_workflow  table and then try and process the message.
       transaction = new sql.Transaction(pool)
       await transaction.begin(sql.ISOLATION_LEVEL.SERIALIZABLE)
       const request = new sql.Request(transaction)
-      await request.batch(`delete from ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.location_lookup`)
+      await request.batch(`delete from ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.FLUVIAL_DISPLAY_GROUP_WORKFLOW`)
       await processMessage(messageKey, [mockResponse])
     } catch (err) {
       // Check that a request timeout occurs.
@@ -237,7 +249,7 @@ module.exports = describe('Tests for import timeseries display groups', () => {
     } finally {
       try {
         await transaction.rollback()
-      } catch (err) {}
+      } catch (err) { }
     }
   }
 })
