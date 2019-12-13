@@ -354,28 +354,26 @@ module.exports = describe('Refresh forecast location data tests', () => {
 
   async function lockForecastLocationTableAndCheckMessageCannotBeProcessed (mockResponseData) {
     let transaction
+    const tableName = 'forecast_location'
     try {
-      // Lock the forecast location table and then try and process the message.
       transaction = new sql.Transaction(pool)
-      await transaction.begin()
+      await transaction.begin(sql.ISOLATION_LEVEL.SERIALIZABLE)
       const request = new sql.Request(transaction)
       await request.batch(`
-        select
-          *
-        from
-          ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.FORECAST_LOCATION
-        with
-          (tablock, holdlock)
-      `)
+      insert into 
+      ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.${tableName} (CENTRE, MFDO_AREA, CATCHMENT, FFFS_LOCATION_ID, FFFS_LOCATION_NAME, PLOT_ID, DRN_ORDER) 
+      values 
+      ('centre', 'mfdo_area', 'catchement', 'loc_id', 'locname', 'plotid', 123)
+    `)
       await mockFetchResponse(mockResponseData)
-      await messageFunction(context, message)
-    } catch (err) {
-      // Check that a request timeout occurs.
-      expect(err.code).toTimeout(err.code)
+      await expect(messageFunction(context, message)).rejects.toBeTimeoutError(tableName)
     } finally {
-      try {
+      if (transaction._aborted) {
+        context.log.warn('The transaction has been aborted.')
+      } else {
         await transaction.rollback()
-      } catch (err) { }
+        context.log.warn('The transaction has been rolled back.')
+      }
     }
   }
 })

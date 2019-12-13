@@ -142,7 +142,7 @@ module.exports = describe('Tests for import timeseries display groups', () => {
       const mockResponse = new Error('Request failed with status code 404')
       await processMessageAndCheckExceptionIsThrown('singleFilterApprovedForecast', mockResponse)
     })
-    it('should throw an exception when the non display group table is being refreshed', async () => {
+    it('should throw an exception when the fluvial_non_display_group_workflow table is being refreshed', async () => {
       // If the fluvial_non_display_group_workflow table is being refreshed messages are elgible for replay a certain number of times
       // so check that an exception is thrown to facilitate this process.
       const mockResponse = {
@@ -233,23 +233,27 @@ module.exports = describe('Tests for import timeseries display groups', () => {
     await expect(messageFunction(context, JSON.stringify(taskRunCompleteMessages[messageKey])))
       .rejects.toThrow(mockErrorResponse)
   }
-
   async function lockNonDisplayGroupTableAndCheckMessageCannotBeProcessed (messageKey, mockResponse) {
     let transaction
+    const tableName = 'fluvial_non_display_group_workflow'
     try {
-      // Lock the non display group table and then try and process the message.
+      // Lock the timeseries table and then try and process the message.
       transaction = new sql.Transaction(pool)
       await transaction.begin(sql.ISOLATION_LEVEL.SERIALIZABLE)
       const request = new sql.Request(transaction)
-      await request.batch(`delete from ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.fluvial_non_display_group_workflow`)
-      await processMessage(messageKey, [mockResponse])
-    } catch (err) {
-      // Check that a request timeout occurs.
-      expect(err.code).toBe('EREQUEST')
+      await request.batch(`
+      INSERT INTO ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.${tableName} (workflow_id,filter_id) 
+      values
+      ('dummyWorkflow', 'dummyFilter')
+    `)
+      await expect(processMessage(messageKey, [mockResponse])).rejects.toBeTimeoutError(tableName)
     } finally {
-      try {
+      if (transaction._aborted) {
+        context.log.warn('The transaction has been aborted.')
+      } else {
         await transaction.rollback()
-      } catch (err) { }
+        context.log.warn('The transaction has been rolled back.')
+      }
     }
   }
 })

@@ -73,7 +73,6 @@ module.exports = describe('Tests for import timeseries display groups', () => {
       // Closing the DB connection allows Jest to exit successfully.
       return pool.close()
     })
-
     it('should import data for a single plot associated with an approved forecast', async () => {
       const mockResponse = {
         data: {
@@ -249,20 +248,25 @@ module.exports = describe('Tests for import timeseries display groups', () => {
 
   async function lockDisplayGroupTableAndCheckMessageCannotBeProcessed (messageKey, mockResponse) {
     let transaction
+    const tableName = 'fluvial_display_group_workflow'
     try {
-      // Lock the fluvial_display_group_workflow  table and then try and process the message.
+      // Lock the timeseries table and then try and process the message.
       transaction = new sql.Transaction(pool)
       await transaction.begin(sql.ISOLATION_LEVEL.SERIALIZABLE)
       const request = new sql.Request(transaction)
-      await request.batch(`delete from ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.FLUVIAL_DISPLAY_GROUP_WORKFLOW`)
-      await processMessage(messageKey, [mockResponse])
-    } catch (err) {
-      // Check that a request timeout occurs.
-      expect(err.code).toBe('EREQUEST')
+      await request.batch(`
+      INSERT INTO ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.${tableName} (workflow_id, plot_id, location_ids) 
+      values 
+      ('dummyWorkflow', 'dummyPlot', 'dummyLocation')
+    `)
+      await expect(processMessage(messageKey, [mockResponse])).rejects.toBeTimeoutError(tableName)
     } finally {
-      try {
+      if (transaction._aborted) {
+        context.log.warn('The transaction has been aborted.')
+      } else {
         await transaction.rollback()
-      } catch (err) { }
+        context.log.warn('The transaction has been rolled back.')
+      }
     }
   }
 })
