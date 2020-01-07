@@ -3,7 +3,7 @@
 Node.js Microsoft Azure functions responsible for extracting data from the core forecasting engine and importing it into a staging database prior to transformation for reporting and visualisation purposes.
 
 * Message based triggering is used when:
-  * Importing data for a single location during the previous twenty fours hours.
+  * Importing data for frequently updated locations that are not associated with a core forecasting engine display group.
   * Importing data for multiple locations associated with a core forecasting engine display group.
   * Refreshing the list of fluvial forecast locations.
   * Refreshing the set of fluvial locations associated with each core forecasting engine display group.
@@ -25,19 +25,6 @@ Node.js Microsoft Azure functions responsible for extracting data from the core 
 * Microsoft Azure resource group
 * Microsoft Azure service bus
 * Microsoft Azure storage account
-* Microsoft Azure storage queue named **fewspiqueue**
-* Microsoft Azure service bus queue named **fews-eventcode-queue**
-* Microsoft Azure service bus queue named **fews-staged-timeseries-queue**
-* Microsoft Azure service bus queue named **fews-forecast-location-queue**
-* Microsoft Azure service bus queue named **fews-display-group-queue**
-* Microsoft Azure service bus queue named **fews-non-display-group-queue**
-* Microsoft Azure service bus queue named **fews-ignored-workflows-queue**
-* Microsoft Azure service bus topic named **fews-eventcode-topic** and associated topic subscription
-* Microsoft Azure service bus topic named **fews-staged-timeseries-topic** and associated topic subscription
-* Microsoft Azure service bus topic named **fews-forecast-location-topic** and associated topic subscription
-* Microsoft Azure service bus topic named **fews-display-group-topic** and associated topic subscription
-* Microsoft Azure service bus topic named **fews-non-display-group-topic** and associated topic subscription
-* Microsoft Azure service bus topic named **fews-ignored-workflows-topic** and associated topic subscription
 * **JavaScript** Microsoft Azure function app with an **application service plan**
 * Microsoft Azure SQL database configured using the [Future Flood Forecasting Web Portal Staging](https://github.com/DEFRA/future-flood-forecasting-web-portal-staging) project.
   * The function app must have connectivity to the Azure SQL database either through the use of a Microsoft Azure virtual network or
@@ -49,13 +36,40 @@ Node.js Microsoft Azure functions responsible for extracting data from the core 
   * The URL for retrieving the set of core forecasting engine filters associated with each workflow.
   * The URL for retrieving the set of ignored workflows.
 
+#### Runtime Prerequisites When Using Microsoft Azure Service Bus Queues
+
+* Microsoft Azure service bus queue named **fews-eventcode-queue**
+* Microsoft Azure service bus queue named **fews-staged-timeseries-queue**
+* Microsoft Azure service bus queue named **fews-forecast-location-queue**
+* Microsoft Azure service bus queue named **fews-fluvial-display-group-queue**
+* Microsoft Azure service bus queue named **fews-fluvial-non-display-group-queue**
+* Microsoft Azure service bus queue named **fews-coastal-display-group-queue**
+* Microsoft Azure service bus queue named **fews-coastal-non-display-group-queue**
+* Microsoft Azure service bus queue named **fews-ignored-workflows-queue**
+
+#### Runtime Prerequisites When Using Microsoft Azure Service Bus Topics
+
+* Microsoft Azure service bus topic named **fews-eventcode-topic** and associated topic subscription
+* Microsoft Azure service bus topic named **fews-staged-timeseries-topic** and associated topic subscription
+* Microsoft Azure service bus topic named **fews-forecast-location-topic** and associated topic subscription
+* Microsoft Azure service bus topic named **fews-fluvial-display-group-topic** and associated topic subscription
+* Microsoft Azure service bus topic named **fews-fluvial-non-display-group-topic** and associated topic subscription
+* Microsoft Azure service bus topic named **fews-coastal-display-group-topic** and associated topic subscription
+* Microsoft Azure service bus topic named **fews-coastal-non-display-group-topic** and associated topic subscription
+* Microsoft Azure service bus topic named **fews-ignored-workflows-topic** and associated topic subscription
+
 ### Redundant Legacy Prerequisites
 
 The function app prerequisites below are no longer required. It is recommended that they should be removed from any existing installation
 accordingly.
 
+* Microsoft Azure storage queue named **fewspiqueue**
 * Microsoft Azure service bus queue named **fews-location-lookup-queue**
 * Microsoft Azure service bus topic named **fews-location-lookup-topic** and associated topic subscription
+* Microsoft Azure service bus queue named **fews-display-group-queue**
+* Microsoft Azure service bus topic named **fews-display-group-topic** and associated topic subscription
+* Microsoft Azure service bus queue named **fews-non-display-group-queue**
+* Microsoft Azure service bus topic named **fews-non-display-group-topic** and associated topic subscription
 
 ### Testing
 
@@ -123,8 +137,8 @@ directory containing this file.
 |-------------------------------------------------------|---------------------------------------------------------------------------------------------|
 | AZURE_SERVICE_BUS_EVENT_CODE_SUBSCRIPTION_NAME        | Subscription name associated with fews-eventcode-topic                                      |
 | AZURE_SERVICE_BUS_STAGED_TIMESERIES_SUBSCRIPTION_NAME | Subscription name associated with fews-staged-timeseries-topic                              |
-| AZURE_SERVICE_BUS_DISPLAY_GROUP_SUBSCRIPTION_NAME     | Subscription name associated with fews-display-group-topic                                  |
-| AZURE_SERVICE_BUS_NON_DISPLAY_GROUP_SUBSCRIPTION_NAME | Subscription name associated with fews-non-display-group-topic                              |
+| AZURE_SERVICE_BUS_FLUVIAL_DISPLAY_GROUP_SUBSCRIPTION_NAME     | Subscription name associated with fews-display-group-topic                          |
+| AZURE_SERVICE_BUS_FLUVIAL_NON_DISPLAY_GROUP_SUBSCRIPTION_NAME | Subscription name associated with fews-non-display-group-topic                      |
 | AZURE_SERVICE_BUS_FORECAST_LOCATION_SUBSCRIPTION_NAME | Subscription name associated with fews-forecast-location-topic                              |
 | AZURE_SERVICE_BUS_IGNORED_WORKFLOWS_SUBSCRIPTION_NAME | Subscription name associated with fews-ignored-workflows-topic                              |
 
@@ -133,13 +147,15 @@ directory containing this file.
 The function app settings/environment variables below are no longer used. It is recommended that they should be removed from any existing installation
 accordingly.
 
-| name                                      | description                                                                                             |
-|-------------------------------------------|---------------------------------------------------------------------------------------------------------|
-| FEWS_INITIAL_LOAD_HISTORY_HOURS           | Number of hours before the initial import time that core forecasting engine data should be retrieved for|
-| FEWS_LOAD_HISTORY_HOURS                   | Number of hours before subsequent import times that core forecasting engine data should be retrieved for|
-| FEWS_IMPORT_DISPLAY_GROUPS_SCHEDULE       | UNIX Cron expression controlling when time series display groups are imported                           |
-| LOCATION_LOOKUP_URL                       | URL used to provide location lookup data associated with display groups                                 |
-| AZURE_SERVICE_BUS_LOCATION_LOOKUP_SUBSCRIPTION_NAME | Subscription name associated with fews-location-lookup-topic                                  |
+| name                                      | description                                                                                                |
+|-------------------------------------------|------------------------------------------------------------------------------------------------------------|
+| FEWS_INITIAL_LOAD_HISTORY_HOURS           | Number of hours before the initial import time that core forecasting engine data should be retrieved for   |
+| FEWS_LOAD_HISTORY_HOURS                   | Number of hours before subsequent import times that core forecasting engine data should be retrieved for   |
+| FEWS_IMPORT_DISPLAY_GROUPS_SCHEDULE       | UNIX Cron expression controlling when time series display groups are imported                              |
+| LOCATION_LOOKUP_URL                       | URL used to provide location lookup data associated with display groups                                    |
+| AZURE_SERVICE_BUS_LOCATION_LOOKUP_SUBSCRIPTION_NAME | Subscription name associated with fews-location-lookup-topic                                     |
+| AZURE_SERVICE_BUS_DISPLAY_GROUP_SUBSCRIPTION_NAME     | Subscription name associated with fews-display-group-topic (no fluvial/coastal distinction)    |
+| AZURE_SERVICE_BUS_NON_DISPLAY_GROUP_SUBSCRIPTION_NAME | Subscription name associated with fews-non-display-group-topic (no fluvial/coastal distinction)|
 
 ### Optional Runtime Function App Settings/Environment Variables
 
@@ -177,7 +193,8 @@ does not prescribe how the activities should be performed.
 
 * Configure app settings/environment variables
 * Install node modules
-* Install function extensions
+* Install Azure Functions Core Tools (includes a version of the same runtime tht powers Azure funcions runtime that you can run locally. It also provides commands to create functions, connet to Azure and deploy function projects).
+* Install function extensions. Extension bundles is a deployment technology that lets you add a compatible set of Functions binding extensions to your function app. A predefined set of extensions are added when you build your app. Extension packages defined in a bundle are compatible with each other, which helps you avoid conflicts between packages. You enable extension bundles in the app's host.json file. You can use extension bundles with version 2.x and later versions of the Functions runtime. When developing locally, make sure you are using the latest version of [Azure Functions Core Tools](https://docs.microsoft.com/en-us/azure/azure-functions/functions-run-local#v2 "Microsoft Azure Documentation"). If you don't use extension bundles, you must install the .NET Core 2.x SDK on your local computer before you install any binding extensions. Extension bundles removes this requirement for local development.
 * Run npm scripts to configure the functions and run unit tests. For example:
   * npm run build && npm test
 * Deploy the functions to the function app
@@ -186,8 +203,10 @@ does not prescribe how the activities should be performed.
 
 * Messages placed on the fewspiqueue **must** contain only the ID of the location for which data is to be imported.
 * Messages placed on the following queues **must** contain some content (for example {"input": "refresh"}), the message content is ignored:  
-  * fews-display-group-queue
-  * fews-non-display-group-queue
+  * fews-fluvial-display-group-queue
+  * fews-coastal-display-group-queue
+  * fews-fluvial-non-display-group-queue  
+  * fews-coastal-non-display-group-queue
   * fews-forecast-location-queue
   * fews-ignored-workflows-queue
 * Messages placed on the fews-eventcode-queue or fews-eventcode-topic **must** adhere to the format used for

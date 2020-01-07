@@ -15,9 +15,11 @@ module.exports =
     const STATUS_TEXT_OK = 'OK'
     const TEXT_CSV = 'text/csv'
     const HTML = 'html'
+
     jest.mock('node-fetch')
 
     let context
+    let dummyData
 
     const jestConnection = new Connection()
     const pool = jestConnection.pool
@@ -35,10 +37,18 @@ module.exports =
         return request.batch(`truncate table ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.fluvial_display_group_workflow`)
       })
 
+      beforeEach(() => {
+        dummyData = {
+          dummyWorkflow: {
+            dummyPlot: ['dummyLocation']
+          }
+        }
+        return request.batch(`INSERT INTO ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.fluvial_display_group_workflow (workflow_id, plot_id, location_ids) values ('dummyWorkflow', 'dummyPlot', 'dummyLocation')`)
+      })
+
       afterEach(() => {
         // As the jestConnection pool is only closed at the end of the test suite the global temporary table used by each function
         // invocation needs to be dropped manually between each test case.
-        // console.log(pool)
         return request.batch(`drop table if exists #fluvial_display_group_workflow_temp`)
       })
 
@@ -55,7 +65,7 @@ module.exports =
           contentType: TEXT_CSV
         }
 
-        const expectedDisplayGroupData = {}
+        const expectedDisplayGroupData = dummyData
 
         await refreshDisplayGroupDataAndCheckExpectedResults(mockResponseData, expectedDisplayGroupData)
       })
@@ -68,7 +78,7 @@ module.exports =
           contentType: TEXT_CSV
         }
 
-        const expectedDisplayGroupData = {}
+        const expectedDisplayGroupData = dummyData
 
         await refreshDisplayGroupDataAndCheckExpectedResults(mockResponseData, expectedDisplayGroupData)
       })
@@ -140,8 +150,7 @@ module.exports =
           contentType: TEXT_CSV
         }
 
-        const expectedDisplayGroupData = {
-        }
+        const expectedDisplayGroupData = dummyData
 
         await refreshDisplayGroupDataAndCheckExpectedResults(mockResponseData, expectedDisplayGroupData)
       })
@@ -154,8 +163,7 @@ module.exports =
           contentType: TEXT_CSV
         }
 
-        const expectedDisplayGroupData = {
-        }
+        const expectedDisplayGroupData = dummyData
 
         await refreshDisplayGroupDataAndCheckExpectedResults(mockResponseData, expectedDisplayGroupData)
       })
@@ -177,7 +185,7 @@ module.exports =
         await refreshDisplayGroupDataAndCheckExpectedResults(mockResponseData, expectedDisplayGroupData)
       })
 
-      it('should ommit rows with missing values in entire column', async () => {
+      it('should ommit all rows as there is missing values for the entire column', async () => {
         const mockResponseData = {
           statusCode: STATUS_CODE_200,
           filename: 'missing-data-in-entire-column.csv',
@@ -185,8 +193,7 @@ module.exports =
           contentType: TEXT_CSV
         }
 
-        const expectedDisplayGroupData = {
-        }
+        const expectedDisplayGroupData = dummyData
 
         await refreshDisplayGroupDataAndCheckExpectedResults(mockResponseData, expectedDisplayGroupData)
       })
@@ -199,8 +206,7 @@ module.exports =
           contentType: JSONFILE
         }
 
-        const expectedDisplayGroupData = {
-        }
+        const expectedDisplayGroupData = dummyData
 
         await refreshDisplayGroupDataAndCheckExpectedResults(mockResponseData, expectedDisplayGroupData)
       })
@@ -213,8 +219,7 @@ module.exports =
           filename: '404-html.html'
         }
 
-        const expectedDisplayGroupData = {
-        }
+        const expectedDisplayGroupData = dummyData
 
         await refreshDisplayGroupDataAndCheckExpectedResults(mockResponseData, expectedDisplayGroupData)
       })
@@ -241,13 +246,11 @@ module.exports =
         await lockDisplayGroupTableAndCheckMessageCannotBeProcessed(mockResponseData)
         // Set the test timeout higher than the database request timeout.
       }, parseInt(process.env['SQLTESTDB_REQUEST_TIMEOUT'] || 15000) + 5000)
-
-      // End of describe
     })
 
     async function refreshDisplayGroupDataAndCheckExpectedResults (mockResponseData, expectedDisplayGroupData) {
       await mockFetchResponse(mockResponseData)
-      await messageFunction(context, message) // calling actual function here
+      await messageFunction(context, message) // This is a call to the function index
       await checkExpectedResults(expectedDisplayGroupData)
     }
 
@@ -274,7 +277,7 @@ module.exports =
         expectedNumberOfRows += Object.keys(expectedDisplayGroupData[workflowId]).length
       }
 
-      // Query the database and check that the locations associated with each grouping of workflow ID and plot ID areas expected.
+      // Query the database and check that the locations associated with each grouping of workflow ID and plot ID are as expected.
       expect(result.recordset[0].number).toBe(expectedNumberOfRows)
       context.log(`databse row count: ${result.recordset[0].number}, input csv row count: ${expectedNumberOfRows}`)
 

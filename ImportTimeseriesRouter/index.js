@@ -11,7 +11,7 @@ module.exports = async function (context, message) {
   context.log.info('JavaScript import time series function processed work item', message)
   context.log.info(context.bindingData)
 
-  async function routeMessage (transactionData) {
+  async function routeMessage (transactionData, context) {
     context.log('JavaScript router ServiceBus queue trigger function processed message', message)
     const proceedWithImport = await isTaskRunApproved(context, message, transactionData.preparedStatement)
     if (proceedWithImport) {
@@ -97,6 +97,7 @@ async function route (context, workflowId, fluvialDisplayGroupWorkflowsResponse,
     context.log.info('Message has been routed to the filter function')
     await ImportTimeSeries(context, message, fluvialNonDisplayGroupWorkflowsResponse, workflowId, preparedStatement)
   } else {
+    context.log.warn(`The workflow: '${workflowId}' was not found in the staging reference tables.`)
     await createStagingException(context, message, `Missing timeseries data for ${workflowId}`, preparedStatement)
   }
 }

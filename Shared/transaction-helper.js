@@ -34,7 +34,7 @@ module.exports = {
       }
       // Call the function that prepares and executes the prepared statement passing
       // through the arguments from the caller.
-      return await fn(transactionData, ...args)
+      return await fn(transactionData, context, ...args)
     } catch (err) {
       context.log.error(`Transaction failed: ${errorMessage} ${err}`)
       if (preparedStatement && preparedStatement.prepared) {
@@ -55,17 +55,17 @@ module.exports = {
         if (preparedStatement && preparedStatement.prepared) {
           await preparedStatement.unprepare()
         }
-      } catch (err) { context.log.error(err) }
+      } catch (err) { context.log.error(`Transaction-helper cleanup error: '${err.message}'.`) }
       try {
         if (transaction && !transactionRolledBack) {
           await transaction.commit()
         }
-      } catch (err) { context.log.error(err) }
+      } catch (err) { context.log.error(`Transaction-helper cleanup error: '${err.message}'.`) }
       try {
         if (pool) {
           await pool.close()
         }
-      } catch (err) { context.log.error(err) }
+      } catch (err) { context.log.error(`Transaction-helper cleanup error: '${err.message}'.`) }
     }
   }
 }
