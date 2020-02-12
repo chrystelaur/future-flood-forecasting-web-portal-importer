@@ -60,7 +60,7 @@ async function getFluvialDisplayGroupWorkflows (context, preparedStatement, work
   select
     plot_id, location_ids
   from
-    ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.FLUVIAL_DISPLAY_GROUP_WORKFLOW
+    ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.fluvial_display_group_workflow
   with
     (tablock holdlock)
   where
@@ -76,28 +76,28 @@ async function getFluvialDisplayGroupWorkflows (context, preparedStatement, work
 }
 
 // Get list of workflows associated with non display groups
-async function getFluvialNonDisplayGroupWorkflows (context, preparedStatement, workflowId) {
+async function getNonDisplayGroupWorkflows (context, preparedStatement, workflowId) {
   await preparedStatement.input('nonDisplayGroupWorkflowId', sql.NVarChar)
 
   // Run the query to retrieve non display group data in a full transaction with a table lock held
   // for the duration of the transaction to guard against a non display group data refresh during
   // data retrieval.
   await preparedStatement.prepare(`
-  select
-    filter_id
-  from
-    ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.FLUVIAL_NON_DISPLAY_GROUP_WORKFLOW
-  with
-    (tablock holdlock)
-  where
-    workflow_id = @nonDisplayGroupWorkflowId
-`)
+    select
+      filter_id
+    from
+      ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.non_display_group_workflow
+    with
+      (tablock holdlock)
+    where
+      workflow_id = @nonDisplayGroupWorkflowId
+  `)
   const parameters = {
     nonDisplayGroupWorkflowId: workflowId
   }
 
-  const fluvialNonDisplayGroupWorkflowsResponse = await preparedStatement.execute(parameters)
-  return fluvialNonDisplayGroupWorkflowsResponse
+  const nonDisplayGroupWorkflowsResponse = await preparedStatement.execute(parameters)
+  return nonDisplayGroupWorkflowsResponse
 }
 
 // Get list of ignored workflows
@@ -111,7 +111,7 @@ async function getIgnoredWorkflows (context, preparedStatement, workflowId) {
   select
     workflow_id
   from
-    ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.IGNORED_WORKFLOW
+    ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.ignored_workflow
   with
     (tablock holdlock)
   where
@@ -233,10 +233,10 @@ async function route (context, message, routeData) {
       timeseriesDataFunctionType = 'plot'
       workflowDataProperty = 'fluvialDisplayGroupWorkflowsResponse'
     } else {
-      workflowsFunction = getFluvialNonDisplayGroupWorkflows
+      workflowsFunction = getNonDisplayGroupWorkflows
       timeseriesDataFunction = getTimeSeriesNonDisplayGroups
       timeseriesDataFunctionType = 'filter'
-      workflowDataProperty = 'fluvialNonDisplayGroupWorkflowsResponse'
+      workflowDataProperty = 'nonDisplayGroupWorkflowsResponse'
     }
 
     // Retrieve workflow reference data from the staging database.
