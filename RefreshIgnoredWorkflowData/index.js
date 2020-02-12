@@ -1,4 +1,5 @@
 const { doInTransaction, executePreparedStatementInTransaction } = require('../Shared/transaction-helper')
+const createCSVStagingException = require('../Shared/create-csv-staging-exception')
 const fetch = require('node-fetch')
 const neatCsv = require('neat-csv')
 const sql = require('mssql')
@@ -28,6 +29,7 @@ async function refreshIgnoredWorkflowData (context, preparedStatement) {
     if (recordCountResponse > 0) {
       await new sql.Request(transaction).batch(`delete from ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.ignored_workflow`)
 
+      const failedRows = []
       await preparedStatement.input('WORKFLOW_ID', sql.NVarChar)
       await preparedStatement.prepare(`insert into ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.ignored_workflow (WORKFLOW_ID) values (@WORKFLOW_ID)`)
       for (const row of rows) {
@@ -37,13 +39,38 @@ async function refreshIgnoredWorkflowData (context, preparedStatement) {
             await preparedStatement.execute({
               WORKFLOW_ID: row.WorkflowID
             })
+          } else {
+            let failedRowInfo = {
+              rowData: row,
+              errorMessage: `A row is missing data.`,
+              errorCode: `NA`
+            }
+            failedRows.push(failedRowInfo)
           }
         } catch (err) {
           context.log.warn(`an error has been found in a row with the WorkflowID: ${row.WorkflowID}.\n  Error : ${err}`)
+          let failedRowInfo = {
+            rowData: row,
+            errorMessage: err.message,
+            errorCode: err.code
+          }
+          failedRows.push(failedRowInfo)
         }
       }
       // Future requests will fail until the prepared statement is unprepared.
       await preparedStatement.unprepare()
+
+      for (let i = 0; i < failedRows.length; i++) {
+        await executePreparedStatementInTransaction(
+          createCSVStagingException, // function
+          context, // context
+          transaction, // transaction
+          `Ignored workflows`, // args - csv file
+          failedRows[i].rowData, // args - row data
+          failedRows[i].errorMessage // args - error description
+        )
+      }
+      context.log.error(`The ignored workflow csv loader has ${failedRows.length} failed row inserts.`)
     } else {
       // If the csv is empty then the file is essentially ignored
       context.log.warn('No records detected - Aborting ignored_workflow refresh')
