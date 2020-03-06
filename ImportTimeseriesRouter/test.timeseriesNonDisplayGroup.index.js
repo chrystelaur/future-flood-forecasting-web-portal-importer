@@ -1,4 +1,4 @@
-module.exports = describe('Tests for import timeseries display groups', () => {
+module.exports = describe('Tests for import timeseries non-display groups', () => {
   const taskRunCompleteMessages = require('../testing/messages/task-run-complete/non-display-group-messages')
   const Context = require('../testing/mocks/defaultContext')
   const Connection = require('../Shared/connection-pool')
@@ -69,6 +69,10 @@ module.exports = describe('Tests for import timeseries display groups', () => {
       return request.batch(`delete from ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.timeseries_header`)
     })
 
+    beforeEach(() => {
+      return request.batch(`delete from ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.staging_exception`)
+    })
+
     afterAll(() => {
       return request.batch(`delete from ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.non_display_group_workflow`)
     })
@@ -82,11 +86,24 @@ module.exports = describe('Tests for import timeseries display groups', () => {
     })
 
     afterAll(() => {
+      return request.batch(`delete from ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.staging_exception`)
+    })
+
+    afterAll(() => {
       // Closing the DB connection allows Jest to exit successfully.
       return pool.close()
     })
 
     it('should import data for a single filter associated with a non-forecast', async () => {
+      const mockResponse = {
+        data: {
+          key: 'Timeseries non-display groups data'
+        }
+      }
+      await processMessageAndCheckImportedData('singleFilterNonForecast', [mockResponse])
+      await processMessageAndCheckImportedData('singleFilterNonForecast', [mockResponse])
+    })
+    it('should import data for a single filter associated with a non-forecast regardless of message processing order', async () => {
       const mockResponse = {
         data: {
           key: 'Timeseries non-display groups data'
@@ -167,6 +184,15 @@ module.exports = describe('Tests for import timeseries display groups', () => {
       await lockNonDisplayGroupTableAndCheckMessageCannotBeProcessed('singleFilterNonForecast', mockResponse)
       // Set the test timeout higher than the database request timeout.
     }, parseInt(process.env['SQLTESTDB_REQUEST_TIMEOUT'] || 15000) + 5000)
+    it('should not import data for duplicate task runs', async () => {
+      const mockResponse = {
+        data: {
+          key: 'Timeseries non-display groups data'
+        }
+      }
+      await processMessage('singleFilterNonForecast', [mockResponse])
+      await processMessageAndCheckDataIsNotImported('singleFilterNonForecast', [mockResponse])
+    })
   })
 
   async function processMessage (messageKey, mockResponses) {
@@ -183,7 +209,7 @@ module.exports = describe('Tests for import timeseries display groups', () => {
     await processMessage(messageKey, mockResponses)
     const messageDescription = taskRunCompleteMessages[messageKey].input.description
     const messageDescriptionIndex = messageDescription.startsWith('Task run') ? 2 : 1
-    const expectedTaskCompletionTime = moment(taskRunCompleteMessages['commonMessageData'].completionTime)
+    const expectedTaskCompletionTime = moment(new Date(`${taskRunCompleteMessages['commonMessageData'].completionTime} UTC`))
     const expectedTaskId = taskRunCompleteMessages[messageKey].input.source
     const expectedWorkflowId = taskRunCompleteMessages[messageKey].input.description.split(' ')[messageDescriptionIndex]
     const receivedFewsData = []
@@ -249,6 +275,19 @@ module.exports = describe('Tests for import timeseries display groups', () => {
     }
   }
 
+  async function processMessageAndCheckDataIsNotImported (messageKey, mockResponses) {
+    const query = `
+      select
+        id
+      from
+        ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.timeseries_header
+    `
+    const numberOfRowsBeforeMessageProcessing = (await request.query(query)).recordset.length
+    await processMessage(messageKey, mockResponses)
+    const numberOfRowsAfterMessageProcessing = (await request.query(query)).recordset.length
+    expect(numberOfRowsAfterMessageProcessing).toBe(numberOfRowsBeforeMessageProcessing)
+  }
+
   async function processMessageAndCheckStagingExceptionIsCreated (messageKey, expectedErrorDescription) {
     await processMessage(messageKey)
     const result = await request.query(`
@@ -276,8 +315,8 @@ module.exports = describe('Tests for import timeseries display groups', () => {
       await transaction.begin()
       const request = new sql.Request(transaction)
       await request.batch(`
-      INSERT INTO 
-      ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.${tableName} (workflow_id,filter_id) 
+      INSERT INTO
+      ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.${tableName} (workflow_id,filter_id)
       values
       ('dummyWorkflow', 'dummyFilter')
     `)
