@@ -28,7 +28,6 @@ module.exports =
     beforeAll(() => {
       return pool.connect()
     })
-
     afterAll(() => {
       // Closing the DB connection allows Jest to exit successfully.
       return pool.close()
@@ -308,7 +307,7 @@ module.exports =
         transaction = new sql.Transaction(pool)
         await transaction.begin(sql.ISOLATION_LEVEL.SERIALIZABLE)
         const request = new sql.Request(transaction)
-        await request.batch(`
+        await request.query(`
           INSERT INTO 
           ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.${tableName} (workflow_id, filter_id) 
           values 

@@ -20,7 +20,7 @@ module.exports = async function (context, message) {
   if (failedRows.length > 0) {
     await doInTransaction(loadExceptions, context, 'The non_display_group_workflow_exception_load has failed with the following error:', sql.ISOLATION_LEVEL.SERIALIZABLE, failedRows)
   } else {
-    context.log.info(`Thhere are no csv exceptions.`)
+    context.log.info(`There are no csv exceptions.`)
   }
   // context.done() not requried as the async function returns the desired result, there is no output binding to be activated.
 }
