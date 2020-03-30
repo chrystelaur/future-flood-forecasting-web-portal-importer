@@ -58,7 +58,7 @@ async function refreshNonDisplayGroupData (context, preparedStatement) {
           } else {
             const failedRowInfo = {
               rowData: row,
-              errorMessage: `A row is missing data.`,
+              errorMessage: `A row is missing data. Keys = ${Object.keys(row)} | WorkflowId = ${row.WorkflowID} | FilterId = ${row.FilterID}`,
               errorCode: `NA`
             }
             failedRows.push(failedRowInfo)

@@ -41,6 +41,7 @@ module.exports =
         // As mocks are reset and restored between each test (through configuration in package.json), the Jest mock
         // function implementation for the function context needs creating for each test.
         context = new Context()
+        request.query(`delete from ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.csv_staging_exception`)
         request.query(`delete from ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.non_display_group_workflow`)
         return request.query(`insert into ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.non_display_group_workflow (workflow_id, filter_id) values ('dummyWorkflow', 'dummyFilter')`)
       })
@@ -58,7 +59,7 @@ module.exports =
 
         const expectedNonDisplayGroupData = dummyData
 
-        await refreshNonDisplayGroupDataAndCheckExpectedResults(mockResponseData, expectedNonDisplayGroupData)
+        await refreshNonDisplayGroupDataAndCheckExpectedResults(mockResponseData, expectedNonDisplayGroupData, 0)
       })
       it('should load a valid csv correctly - single filter per workflow', async () => {
         const mockResponseData = {
@@ -74,7 +75,7 @@ module.exports =
           test_non_display_workflow_2: ['test_filter_2']
         }
 
-        await refreshNonDisplayGroupDataAndCheckExpectedResults(mockResponseData, expectedNonDisplayGroupData)
+        await refreshNonDisplayGroupDataAndCheckExpectedResults(mockResponseData, expectedNonDisplayGroupData, 0)
       })
       it('should load a valid csv correctly - multiple filters per workflow', async () => {
         const mockResponseData = {
@@ -91,7 +92,7 @@ module.exports =
           test_non_display_workflow_4: ['test_filter_4']
         }
 
-        await refreshNonDisplayGroupDataAndCheckExpectedResults(mockResponseData, expectedNonDisplayGroupData)
+        await refreshNonDisplayGroupDataAndCheckExpectedResults(mockResponseData, expectedNonDisplayGroupData, 0)
       })
       it('should not load duplicate rows in a csv', async () => {
         const mockResponseData = {
@@ -107,7 +108,7 @@ module.exports =
           test_non_display_workflow_2: ['test_filter_2']
         }
 
-        await refreshNonDisplayGroupDataAndCheckExpectedResults(mockResponseData, expectedNonDisplayGroupData)
+        await refreshNonDisplayGroupDataAndCheckExpectedResults(mockResponseData, expectedNonDisplayGroupData, 1)
       })
       it('should ignore a CSV file with misspelled headers', async () => {
         const mockResponseData = {
@@ -119,7 +120,7 @@ module.exports =
 
         const expectedNonDisplayGroupData = dummyData
 
-        await refreshNonDisplayGroupDataAndCheckExpectedResults(mockResponseData, expectedNonDisplayGroupData)
+        await refreshNonDisplayGroupDataAndCheckExpectedResults(mockResponseData, expectedNonDisplayGroupData, 3)
       })
       it('should load WorkflowId and FilterId correctly into the db correctly with extra CSV fields present', async () => {
         const mockResponseData = {
@@ -134,7 +135,7 @@ module.exports =
           test_non_display_workflow_2: ['test_filter_2']
         }
 
-        await refreshNonDisplayGroupDataAndCheckExpectedResults(mockResponseData, expectedNonDisplayGroupData)
+        await refreshNonDisplayGroupDataAndCheckExpectedResults(mockResponseData, expectedNonDisplayGroupData, 0)
       })
       it('should not refresh with valid header row but no data rows', async () => {
         const mockResponseData = {
@@ -146,7 +147,7 @@ module.exports =
 
         const expectedNonDisplayGroupData = dummyData
 
-        await refreshNonDisplayGroupDataAndCheckExpectedResults(mockResponseData, expectedNonDisplayGroupData)
+        await refreshNonDisplayGroupDataAndCheckExpectedResults(mockResponseData, expectedNonDisplayGroupData, 0)
       })
       it('should reject insert if there is no header row, expect the first row to be treated as the header', async () => {
         const mockResponseData = {
@@ -158,7 +159,7 @@ module.exports =
 
         const expectedNonDisplayGroupData = dummyData
 
-        await refreshNonDisplayGroupDataAndCheckExpectedResults(mockResponseData, expectedNonDisplayGroupData)
+        await refreshNonDisplayGroupDataAndCheckExpectedResults(mockResponseData, expectedNonDisplayGroupData, 2)
       })
       it('should ommit rows with missing values', async () => {
         const mockResponseData = {
@@ -172,7 +173,7 @@ module.exports =
           test_non_display_workflow_2: ['test_filter_a']
         }
 
-        await refreshNonDisplayGroupDataAndCheckExpectedResults(mockResponseData, expectedNonDisplayGroupData)
+        await refreshNonDisplayGroupDataAndCheckExpectedResults(mockResponseData, expectedNonDisplayGroupData, 2)
       })
       it('should ommit all rows as there is missing values for the entire column', async () => {
         const mockResponseData = {
@@ -184,7 +185,7 @@ module.exports =
 
         const expectedNonDisplayGroupData = dummyData
 
-        await refreshNonDisplayGroupDataAndCheckExpectedResults(mockResponseData, expectedNonDisplayGroupData)
+        await refreshNonDisplayGroupDataAndCheckExpectedResults(mockResponseData, expectedNonDisplayGroupData, 3)
       })
       it('should not refresh when a non-csv file (JSON) is provided', async () => {
         const mockResponseData = {
@@ -196,7 +197,7 @@ module.exports =
 
         const expectedNonDisplayGroupData = dummyData
 
-        await refreshNonDisplayGroupDataAndCheckExpectedResults(mockResponseData, expectedNonDisplayGroupData)
+        await refreshNonDisplayGroupDataAndCheckExpectedResults(mockResponseData, expectedNonDisplayGroupData, 3)
       })
       it('should not refresh if csv endpoint is not found(404)', async () => {
         const mockResponseData = {
@@ -208,7 +209,7 @@ module.exports =
 
         const expectedNonDisplayGroupData = dummyData
 
-        await refreshNonDisplayGroupDataAndCheckExpectedResults(mockResponseData, expectedNonDisplayGroupData)
+        await refreshNonDisplayGroupDataAndCheckExpectedResults(mockResponseData, expectedNonDisplayGroupData, 17)
       })
       it('should throw an exception when the csv server is unavailable', async () => {
         const expectedError = new Error(`connect ECONNREFUSED mockhost`)
@@ -245,10 +246,10 @@ module.exports =
       })
     })
 
-    async function refreshNonDisplayGroupDataAndCheckExpectedResults (mockResponseData, expectedNonDisplayGroupData) {
+    async function refreshNonDisplayGroupDataAndCheckExpectedResults (mockResponseData, expectedNonDisplayGroupData, expectedNumberOfExceptionRows) {
       await mockFetchResponse(mockResponseData)
       await messageFunction(context, message) // This is a call to the function index
-      await checkExpectedResults(expectedNonDisplayGroupData)
+      await checkExpectedResults(expectedNonDisplayGroupData, expectedNumberOfExceptionRows)
     }
 
     async function mockFetchResponse (mockResponseData) {
@@ -263,8 +264,9 @@ module.exports =
       fetch.mockResolvedValue(mockResponse)
     }
 
-    async function checkExpectedResults (expectedNonDisplayGroupData) {
+    async function checkExpectedResults (expectedNonDisplayGroupData, expectedNumberOfExceptionRows) {
       const result = await request.query(`select count(*) as number from ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.non_display_group_workflow`)
+      const exceptionResult = await request.query(`select count(*) as number from ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.csv_staging_exception`)
       const workflowIds = Object.keys(expectedNonDisplayGroupData)
       let expectedNumberOfRows = 0
 
@@ -276,6 +278,8 @@ module.exports =
       // Query the database and check that the filter IDs associated with each workflow ID are as expected.
       expect(result.recordset[0].number).toBe(expectedNumberOfRows)
       context.log(`databse row count: ${result.recordset[0].number}, input csv row count: ${expectedNumberOfRows}`)
+
+      expect(exceptionResult.recordset[0].number).toBe(expectedNumberOfExceptionRows)
 
       if (expectedNumberOfRows > 0) {
         const workflowIds = Object.keys(expectedNonDisplayGroupData)
@@ -335,7 +339,7 @@ module.exports =
       order by
         exception_time desc
     `)
-      expect(result.recordset[0].description).toBe(expectedErrorDescription)
+      expect(result.recordset[0].description).toContain(expectedErrorDescription)
     }
   }
   )
