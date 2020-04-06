@@ -1,0 +1,11 @@
+{
+    "bindings": [
+      {
+        "name": "myTimer",
+        "type": "timerTrigger",
+        "direction": "in",
+        "schedule": "%DELETE_EXPIRED_TIMESERIES_CRON_EXPRESSION%"
+      }
+    ]
+  }
+  
