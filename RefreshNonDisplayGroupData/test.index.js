@@ -26,12 +26,10 @@ module.exports =
     const request = new sql.Request(pool)
 
     describe('The refresh non_display_group_workflow data function', () => {
-      beforeAll(async (done) => {
+      beforeAll(async () => {
         await pool.connect()
-        done()
       })
-
-      beforeEach(async (done) => {
+      beforeEach(async () => {
         dummyData = {
           dummyWorkflow: ['dummyFilter']
         }
@@ -41,12 +39,11 @@ module.exports =
         await request.query(`delete from ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.csv_staging_exception`)
         await request.query(`delete from ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.non_display_group_workflow`)
         await request.query(`insert into ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.non_display_group_workflow (workflow_id, filter_id) values ('dummyWorkflow', 'dummyFilter')`)
-        done()
       })
-      afterAll(async (done) => {
+      afterAll(async () => {
         await request.query(`delete from ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.non_display_group_workflow`)
         await request.query(`delete from ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.csv_staging_exception`)
-        done()
+        await pool.close()
       })
       it('should ignore an empty CSV file', async () => {
         const mockResponseData = {
