@@ -25,29 +25,28 @@ module.exports =
     const pool = jestConnection.pool
     const request = new sql.Request(pool)
 
-    beforeAll(() => {
-      return pool.connect()
-    })
-    afterAll(() => {
-      // Closing the DB connection allows Jest to exit successfully.
-      return pool.close()
-    })
-
     describe('The refresh non_display_group_workflow data function', () => {
-      beforeEach(() => {
+      beforeAll(async (done) => {
+        await pool.connect()
+        done()
+      })
+
+      beforeEach(async (done) => {
         dummyData = {
           dummyWorkflow: ['dummyFilter']
         }
         // As mocks are reset and restored between each test (through configuration in package.json), the Jest mock
         // function implementation for the function context needs creating for each test.
         context = new Context()
-        request.query(`delete from ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.csv_staging_exception`)
-        request.query(`delete from ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.non_display_group_workflow`)
-        return request.query(`insert into ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.non_display_group_workflow (workflow_id, filter_id) values ('dummyWorkflow', 'dummyFilter')`)
+        await request.query(`delete from ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.csv_staging_exception`)
+        await request.query(`delete from ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.non_display_group_workflow`)
+        await request.query(`insert into ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.non_display_group_workflow (workflow_id, filter_id) values ('dummyWorkflow', 'dummyFilter')`)
+        done()
       })
-      afterAll(() => {
-        request.query(`delete from ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.non_display_group_workflow`)
-        return request.query(`delete from ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.csv_staging_exception`)
+      afterAll(async (done) => {
+        await request.query(`delete from ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.non_display_group_workflow`)
+        await request.query(`delete from ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.csv_staging_exception`)
+        done()
       })
       it('should ignore an empty CSV file', async () => {
         const mockResponseData = {
