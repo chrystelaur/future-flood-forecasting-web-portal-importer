@@ -1,5 +1,5 @@
 const { doInTransaction, executePreparedStatementInTransaction } = require('../Shared/transaction-helper')
-const loadExceptions = require('../Shared/load-csv-exceptions')
+const loadExceptions = require('../Shared/failed-csv-load-handler/load-csv-exceptions')
 const fetch = require('node-fetch')
 const neatCsv = require('neat-csv')
 const sql = require('mssql')
@@ -18,7 +18,7 @@ module.exports = async function (context, message) {
   // placed on a dead letter queue.  In this case, manual intervention will be required.
   await doInTransaction(refresh, context, 'The non_display_group_workflow refresh has failed with the following error:', sql.ISOLATION_LEVEL.SERIALIZABLE)
   if (failedRows.length > 0) {
-    await doInTransaction(loadExceptions, context, 'The non_display_group_workflow_exception_load has failed with the following error:', sql.ISOLATION_LEVEL.SERIALIZABLE, failedRows)
+    await doInTransaction(loadExceptions, context, 'The non_display_group_workflow_exception_load has failed with the following error:', sql.ISOLATION_LEVEL.SERIALIZABLE, 'non-display-groups', failedRows)
   } else {
     context.log.info(`There are no csv exceptions.`)
   }
