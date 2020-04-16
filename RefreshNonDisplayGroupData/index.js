@@ -79,19 +79,19 @@ async function refreshNonDisplayGroupData (context, preparedStatement) {
       // If the csv is empty then the file is essentially ignored
       context.log.warn('No records detected - Aborting non_display_group_workflow refresh')
     }
+    // Count rows in the table
     const request = new sql.Request(transaction)
     const result = await request.query(`select count(*) as number from ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.non_display_group_workflow`)
     context.log.info(`The non_display_group_workflow table now contains ${result.recordset[0].number} records`)
     if (result.recordset[0].number === 0) {
-      // If all the records in the csv were invalid, the function will overwrite records in the table with no new records
-      // after the table has already been truncated. This function needs rolling back to avoid a blank database overwrite.
-      context.log.warn('There are no new records to insert, rolling back non_display_group_workflow refresh.')
-      context.log.info('A null database overwrite is not allowed, rolling back.')
+      // If all the records in the csv were invalid, this query needs rolling back to avoid a blank database overwrite.
+      context.log.warn('There were no new records to insert, a null database overwrite is not allowed. Rolling back non_display_group_workflow refresh.')
       await transaction.rollback()
-      context.log.info('Transaction rolled back.')
+      context.log.warn('Transaction rolled back.')
     }
 
-    context.log.error(`The non display group csv loader attempted and failed to load ${failedRows.length} rows.`)
+    // Regardless of whether a rollback took place, all the failed rows are captured for laoding into exceptions
+    context.log.error(`The non display group csv loader attempted but failed to load ${failedRows.length} rows.`)
     return failedRows
   } catch (err) {
     context.log.error(`Refresh non display group workflow data failed: ${err}`)
