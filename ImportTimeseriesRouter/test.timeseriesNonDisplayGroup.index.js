@@ -2,6 +2,7 @@ module.exports = describe('Tests for import timeseries non-display groups', () =
   const taskRunCompleteMessages = require('../testing/messages/task-run-complete/non-display-group-messages')
   const Context = require('../testing/mocks/defaultContext')
   const Connection = require('../Shared/connection-pool')
+  const { isBoolean } = require('../Shared/utils')
   const messageFunction = require('./index')
   const moment = require('moment')
   const axios = require('axios')
@@ -14,6 +15,21 @@ module.exports = describe('Tests for import timeseries non-display groups', () =
   const pool = jestConnection.pool
   const request = new sql.Request(pool)
 
+  describe('Forecast flag testing ', () => {
+    it('should return true for boolean values', () => {
+      expect(isBoolean(true)).toBe(true)
+      expect(isBoolean(false)).toBe(true)
+    })
+    it('should return true for boolean string values regardless of case', () => {
+      expect(isBoolean('True')).toBe(true)
+      expect(isBoolean('false')).toBe(true)
+    })
+    it('should return false for non-boolean values', () => {
+      expect(isBoolean(0)).toBe(false)
+      expect(isBoolean('string')).toBe(false)
+    })
+  })
+
   describe('Message processing for non display group task run completion', () => {
     beforeAll(async () => {
       await pool.connect()
@@ -22,9 +38,19 @@ module.exports = describe('Tests for import timeseries non-display groups', () =
       await request.batch(`delete from ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.ignored_workflow`)
       await request.batch(`
         insert into
-          ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.non_display_group_workflow (workflow_id, filter_id)
+          ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.non_display_group_workflow (workflow_id, filter_id, forecast)
         values
-          ('Test_Workflow1', 'Test Filter1'), ('Test_Workflow2', 'Test Filter2a'), ('Test_Workflow2', 'Test Filter2b')
+          ('Test_Workflow1', 'Test Filter1', 0),
+          ('Test_Workflow2', 'Test Filter2a', 0),
+          ('Test_Workflow2', 'Test Filter2b', 0),
+          ('Test_Workflow3', 'Test Filter3', 1),
+          ('Test_Workflow4', 'Test Filter4', 1)
+      `)
+      await request.batch(`
+        insert into
+          ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.fluvial_display_group_workflow (workflow_id, plot_id, location_ids)
+        values
+          ('Test_Workflow4', 'Test Plot4', 'Test Location4')
       `)
     })
 
@@ -55,7 +81,6 @@ module.exports = describe('Tests for import timeseries non-display groups', () =
         }
       }
       await processMessageAndCheckImportedData('singleFilterNonForecast', [mockResponse])
-      await processMessageAndCheckImportedData('singleFilterNonForecast', [mockResponse])
     })
     it('should import data for a single filter associated with a non-forecast regardless of message processing order', async () => {
       const mockResponse = {
@@ -77,6 +102,44 @@ module.exports = describe('Tests for import timeseries non-display groups', () =
         }
       }]
       await processMessageAndCheckImportedData('multipleFilterNonForecast', mockResponses)
+    })
+    it('should import data for a single filter associated with an approved forecast', async () => {
+      const mockResponse = {
+        data: {
+          key: 'Timeseries non-display groups data'
+        }
+      }
+      await processMessageAndCheckImportedData('singleFilterApprovedForecast', [mockResponse])
+    })
+    it('should import data for a single filter associated with an unapproved forecast', async () => {
+      const mockResponse = {
+        data: {
+          key: 'Timeseries non-display groups data'
+        }
+      }
+      await processMessageAndCheckImportedData('singleFilterUnapprovedForecast', [mockResponse])
+    })
+    it('should import data for plots and filters associated with the same workflow', async () => {
+      const displayMockResponse = {
+        data: {
+          key: 'Timeseries display groups data'
+        }
+      }
+      const nonDisplayMockResponse = {
+        data: {
+          key: 'Timeseries non-display groups data'
+        }
+      }
+      await processMessageAndCheckImportedData('singlePlotAndFilterApprovedForecast', [displayMockResponse, nonDisplayMockResponse])
+    })
+    it('should not import data for an out of date forecast', async () => {
+      const mockResponse = {
+        data: {
+          key: 'Timeseries display groups data'
+        }
+      }
+      await processMessageAndCheckImportedData('singleFilterApprovedForecast', [mockResponse])
+      await processMessageAndCheckNoDataIsImported('earlierSingleFilterApprovedForecast', 1)
     })
     it('should allow the default task run start and end times to be overridden using environment variables', async () => {
       const originalEnvironment = process.env
@@ -103,7 +166,7 @@ module.exports = describe('Tests for import timeseries non-display groups', () =
       await processMessageCheckStagingExceptionIsCreatedAndNoDataIsImported(missingWorkflow, 'Missing PI Server input data for with')
     })
     it('should create a staging exception for a non-forecast without an approval status', async () => {
-      await processMessageCheckStagingExceptionIsCreatedAndNoDataIsImported('forecastWithoutApprovalStatus', 'Unable to extract task run approval status from message')
+      await processMessageCheckStagingExceptionIsCreatedAndNoDataIsImported('nonForecastWithoutApprovalStatus', 'Unable to extract task run approval status from message')
     })
     it('should create a staging exception for a message containing the boolean false', async () => {
       await processMessageCheckStagingExceptionIsCreatedAndNoDataIsImported('booleanFalseMessage', 'Message must be either a string or a pure object')
@@ -112,7 +175,7 @@ module.exports = describe('Tests for import timeseries non-display groups', () =
       await processMessageCheckStagingExceptionIsCreatedAndNoDataIsImported('numericMessage', 'Message must be either a string or a pure object')
     })
     it('should create a staging exception for a non-forecast without an end time', async () => {
-      await processMessageCheckStagingExceptionIsCreatedAndNoDataIsImported('forecastWithoutEndTime', 'Unable to extract task run completion date from message')
+      await processMessageCheckStagingExceptionIsCreatedAndNoDataIsImported('nonForecastWithoutEndTime', 'Unable to extract task run completion date from message')
     })
     it('should throw an exception when the core engine PI server is unavailable', async () => {
       // If the core engine PI server is down messages are elgible for replay a certain number of times so check that
@@ -276,9 +339,9 @@ module.exports = describe('Tests for import timeseries non-display groups', () =
       const request = new sql.Request(transaction)
       await request.batch(`
       INSERT INTO
-      ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.${tableName} (workflow_id,filter_id)
+      ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.${tableName} (workflow_id,filter_id,forecast)
       values
-      ('dummyWorkflow', 'dummyFilter')
+      ('dummyWorkflow', 'dummyFilter', 0)
     `)
       await expect(processMessage(messageKey, [mockResponse])).rejects.toBeTimeoutError(tableName)
     } finally {

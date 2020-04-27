@@ -15,7 +15,7 @@ const preprocessMessage = require('./helpers/preprocess-message')
 const sql = require('mssql')
 
 module.exports = async function (context, message) {
-  // This function is triggered via a queue message drop, 'message' is the name of the variable that contains the queue item payload
+  // This function is triggered via a queue message drop, 'message' is the name of the variable that contains the queue item payload.
   context.log.info('JavaScript import time series function processing work item', message)
   context.log.info(context.bindingData)
   await doInTransaction(routeMessage, context, 'The message routing function has failed with the following error:', null, message)
@@ -23,38 +23,44 @@ module.exports = async function (context, message) {
 }
 
 // Get a list of workflows associated with display groups
-async function getFluvialDisplayGroupWorkflows (context, preparedStatement, workflowId) {
-  await preparedStatement.input('displayGroupWorkflowId', sql.NVarChar)
+async function getDisplayGroupWorkflows (context, preparedStatement, routeData) {
+  if (routeData.forecast && !routeData.approved) {
+    context.log.warn(`Ignoring unapproved forecast message ${JSON.stringify(routeData.message)}`)
+  } else {
+    await preparedStatement.input('displayGroupWorkflowId', sql.NVarChar)
+    // Run the query to retrieve display group data in a full transaction with a table lock held
+    // for the duration of the transaction to guard against a display group data refresh during
+    // data retrieval.
+    await preparedStatement.prepare(`
+      select
+        plot_id, location_ids
+      from
+        ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.${routeData.workflowTableName}
+      with
+        (tablock holdlock)
+      where
+        workflow_id = @displayGroupWorkflowId
+   `)
 
-  // Run the query to retrieve display group data in a full transaction with a table lock held
-  // for the duration of the transaction to guard against a display group data refresh during
-  // data retrieval.
-  await preparedStatement.prepare(`
-  select
-    plot_id, location_ids
-  from
-    ${process.env['FFFS_WEB_PORTAL_STAGING_DB_STAGING_SCHEMA']}.fluvial_display_group_workflow
-  with
-    (tablock holdlock)
-  where
-    workflow_id = @displayGroupWorkflowId
-`)
+    const parameters = {
+      displayGroupWorkflowId: routeData.workflowId
+    }
 
-  const parameters = {
-    displayGroupWorkflowId: workflowId
+    const fluvialDisplayGroupWorkflowsResponse = await preparedStatement.execute(parameters)
+    return fluvialDisplayGroupWorkflowsResponse
   }
-
-  const fluvialDisplayGroupWorkflowsResponse = await preparedStatement.execute(parameters)
-  return fluvialDisplayGroupWorkflowsResponse
 }
 
 // Get list of workflows associated with non display groups
-async function getNonDisplayGroupWorkflows (context, preparedStatement, workflowId) {
+async function getNonDisplayGroupWorkflows (context, preparedStatement, routeData) {
   await preparedStatement.input('nonDisplayGroupWorkflowId', sql.NVarChar)
 
-  // Run the query to retrieve non display group data in a full transaction with a table lock held
-  // for the duration of the transaction to guard against a non display group data refresh during
-  // data retrieval.
+  // Ensure the query to retrieve non display group data takes account of core engine forecasts and external forecasts.
+  // If the core engine message is associated with a forecast, search for matching workflows where the forecast
+  // attribute is set. If the core engine message is not associated with a forecast, search for all matching
+  // workflows so that external forecast data is retrieved.
+  // Run the query in a full transaction with a table lock held for the duration of the transaction to guard
+  // against a non display group data refresh during data retrieval.
   await preparedStatement.prepare(`
     select
       filter_id
@@ -64,16 +70,17 @@ async function getNonDisplayGroupWorkflows (context, preparedStatement, workflow
       (tablock holdlock)
     where
       workflow_id = @nonDisplayGroupWorkflowId
+      ${routeData.forecast ? ' and forecast = 1' : ''}
   `)
   const parameters = {
-    nonDisplayGroupWorkflowId: workflowId
+    nonDisplayGroupWorkflowId: routeData.workflowId
   }
 
   const nonDisplayGroupWorkflowsResponse = await preparedStatement.execute(parameters)
   return nonDisplayGroupWorkflowsResponse
 }
 
-// Get list of ignored workflows
+// Get list of ignored workflows.
 async function getIgnoredWorkflows (context, preparedStatement, workflowId) {
   await preparedStatement.input('workflowId', sql.NVarChar)
 
@@ -98,7 +105,7 @@ async function getIgnoredWorkflows (context, preparedStatement, workflowId) {
   return ignoredWorkflowsResponse
 }
 
-async function createTimeseriesHeader (context, preparedStatement, message, routeData) {
+async function createTimeseriesHeader (context, preparedStatement, routeData) {
   let timeseriesHeaderId
 
   await preparedStatement.input('startTime', sql.DateTime2)
@@ -172,7 +179,7 @@ async function loadTimeseries (context, preparedStatement, timeSeriesData, route
   context.log('Loaded timeseries data')
 }
 
-async function route (context, message, routeData) {
+async function route (context, routeData) {
   const ignoredWorkflowsResponse =
     await executePreparedStatementInTransaction(getIgnoredWorkflows, context, routeData.transaction, routeData.workflowId)
 
@@ -180,61 +187,82 @@ async function route (context, message, routeData) {
 
   if (ignoredWorkflow) {
     context.log(`${routeData.workflowId} is an ignored workflow`)
-  } else if (routeData.forecast && !routeData.approved) {
-    context.log.warn(`Ignoring unapproved forecast message ${JSON.stringify(message)}`)
   } else {
     // Import data for approved task runs of display group workflows and all tasks runs of non-display group workflows.
-    let timeseriesData
-    let timeseriesDataFunction
-    let timeseriesDataFunctionType
-    let workflowDataProperty
-    let workflowsFunction
+    const allDataRetrievalParameters = {
+      fluvialDisplayGroupDataRetrievalParameters: {
+        workflowsFunction: getDisplayGroupWorkflows,
+        timeseriesDataFunction: getTimeSeriesDisplayGroups,
+        timeseriesDataFunctionType: 'plot',
+        workflowDataProperty: 'fluvialDisplayGroupWorkflowsResponse',
+        workflowTableName: 'fluvial_display_group_workflow'
+      },
+      nonDisplayGroupDataRetrievalParameters: {
+        workflowsFunction: getNonDisplayGroupWorkflows,
+        timeseriesDataFunction: getTimeSeriesNonDisplayGroups,
+        timeseriesDataFunctionType: 'filter',
+        workflowDataProperty: 'nonDisplayGroupWorkflowsResponse'
+      }
+    }
+
+    let dataRetrievalParametersArray = []
 
     // Prepare to retrieve timeseries data for the workflow task run from the core engine PI server using workflow
     // reference data held in the staging database.
     if (routeData.forecast) {
-      workflowsFunction = getFluvialDisplayGroupWorkflows
-      timeseriesDataFunction = getTimeSeriesDisplayGroups
-      timeseriesDataFunctionType = 'plot'
-      workflowDataProperty = 'fluvialDisplayGroupWorkflowsResponse'
+      dataRetrievalParametersArray.push(allDataRetrievalParameters.fluvialDisplayGroupDataRetrievalParameters)
+      // Core engine forecasts can be associated with display and non-display group CSV files.
+      dataRetrievalParametersArray.push(allDataRetrievalParameters.nonDisplayGroupDataRetrievalParameters)
     } else {
-      workflowsFunction = getNonDisplayGroupWorkflows
-      timeseriesDataFunction = getTimeSeriesNonDisplayGroups
-      timeseriesDataFunctionType = 'filter'
-      workflowDataProperty = 'nonDisplayGroupWorkflowsResponse'
+      dataRetrievalParametersArray.push(allDataRetrievalParameters.nonDisplayGroupDataRetrievalParameters)
     }
 
-    // Retrieve workflow reference data from the staging database.
-    routeData[workflowDataProperty] = await executePreparedStatementInTransaction(workflowsFunction, context, routeData.transaction, routeData.workflowId)
+    for (let dataRetrievalParameters of dataRetrievalParametersArray) {
+      let timeseriesData
+      const timeseriesDataFunction = dataRetrievalParameters.timeseriesDataFunction
+      const timeseriesDataFunctionType = dataRetrievalParameters.timeseriesDataFunctionType
+      const workflowDataProperty = dataRetrievalParameters.workflowDataProperty
+      const workflowsFunction = dataRetrievalParameters.workflowsFunction
 
-    if (routeData[workflowDataProperty].recordset.length > 0) {
-      context.log.info(`Message has been routed to the ${timeseriesDataFunctionType} function`)
+      // Retrieve workflow reference data from the staging database.
+      if (dataRetrievalParameters.workflowTableName) {
+        routeData.workflowTableName = dataRetrievalParameters.workflowTableName
+      }
 
-      routeData.timeseriesHeaderId = await executePreparedStatementInTransaction(
-        createTimeseriesHeader,
-        context,
-        routeData.transaction,
-        message,
-        routeData
-      )
+      routeData[workflowDataProperty] = await executePreparedStatementInTransaction(workflowsFunction, context, routeData.transaction, routeData)
 
-      // Retrieve timeseries data from the core engine PI server and load it into the staging database.
-      timeseriesData = await timeseriesDataFunction(context, routeData)
-      await executePreparedStatementInTransaction(
-        loadTimeseries,
-        context,
-        routeData.transaction,
-        timeseriesData,
-        routeData
-      )
-    } else {
+      if (routeData[workflowDataProperty] && routeData[workflowDataProperty].recordset.length > 0) {
+        context.log.info(`Message has been routed to the ${timeseriesDataFunctionType} function`)
+
+        if (!routeData.timeseriesHeaderId) {
+          routeData.timeseriesHeaderId = await executePreparedStatementInTransaction(
+            createTimeseriesHeader,
+            context,
+            routeData.transaction,
+            routeData
+          )
+        }
+
+        // Retrieve timeseries data from the core engine PI server and load it into the staging database.
+        timeseriesData = await timeseriesDataFunction(context, routeData)
+        await executePreparedStatementInTransaction(
+          loadTimeseries,
+          context,
+          routeData.transaction,
+          timeseriesData,
+          routeData
+        )
+      }
+    }
+
+    if (!routeData.timeseriesHeaderId) {
       const errorMessage = `Missing PI Server input data for ${routeData.workflowId}`
 
       await executePreparedStatementInTransaction(
         createStagingException,
         context,
         routeData.transaction,
-        message,
+        routeData.message,
         errorMessage
       )
     }
@@ -243,6 +271,8 @@ async function route (context, message, routeData) {
 
 async function parseMessage (context, transaction, message) {
   const routeData = {
+    message: message,
+    transaction: transaction
   }
   // Retrieve data from twelve hours before the task run completed to five days after the task run completed by default.
   // This time period can be overridden by the two environment variables
@@ -261,7 +291,6 @@ async function parseMessage (context, transaction, message) {
   routeData.taskRunId = await executePreparedStatementInTransaction(getTaskRunId, context, transaction, message)
   routeData.forecast = await executePreparedStatementInTransaction(isForecast, context, transaction, message)
   routeData.approved = await executePreparedStatementInTransaction(isTaskRunApproved, context, transaction, message)
-  routeData.transaction = transaction
   return routeData
 }
 
@@ -279,7 +308,7 @@ async function routeMessage (transaction, context, message) {
           typeof routeData.forecast !== 'undefined' && typeof routeData.approved !== 'undefined') {
           // Do not import out of date forecast data.
           if (!routeData.forecast || await executePreparedStatementInTransaction(isLatestTaskRunForWorkflow, context, transaction, routeData)) {
-            await route(context, preprocessedMessage, routeData)
+            await route(context, routeData)
           } else {
             context.log.warn(`Ignoring message for task run ${routeData.taskRunId} completed on ${routeData.taskCompletionTime}` +
               ` - ${routeData.latestTaskRunId} completed on ${routeData.latestTaskCompletionTime} is the latest task run for workflow ${routeData.workflowId}`)
